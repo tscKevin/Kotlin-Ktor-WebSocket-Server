@@ -10,6 +10,10 @@ import kotlinx.html.*
 import kotlinx.css.*
 import io.ktor.client.*
 import io.ktor.client.engine.apache.*
+import io.ktor.http.cio.websocket.*
+import io.ktor.websocket.*
+import kotlinx.coroutines.channels.ClosedReceiveChannelException
+import java.time.Duration
 
 fun main(args: Array<String>): Unit = io.ktor.server.netty.EngineMain.main(args)
 
@@ -19,35 +23,55 @@ fun Application.module(testing: Boolean = false) {
     val client = HttpClient(Apache) {
     }
 
+    install(WebSockets) {
+        pingPeriod = Duration.ofSeconds(60)
+        timeout = Duration.ofSeconds(15)
+        maxFrameSize = Long.MAX_VALUE
+        masking = false
+    }
     routing {
         get("/") {
             call.respondText("HELLO TSMC IE!", contentType = ContentType.Text.Plain)
         }
-
-        get("/html-dsl") {
-            call.respondHtml {
-                body {
-                    h1 { +"HTML" }
-                    ul {
-                        for (n in 1..10) {
-                            li { +"$n" }
+        webSocket("/echoTest") {
+            while (true) {
+                val receive = incoming.receive()
+                when (receive) {
+                    is Frame.Text -> {
+                        val msg = receive.readText()
+                        outgoing.send(Frame.Text(msg))
+                        if (msg.equals("bye", ignoreCase = true)) {
+                            close(CloseReason(CloseReason.Codes.NORMAL, "Client Send BYE"))
                         }
+                        println(msg)
                     }
                 }
             }
         }
-
-        get("/styles.css") {
-            call.respondCss {
-                body {
-                    backgroundColor = Color.red
+        var connectList: ArrayList<DefaultWebSocketServerSession> = ArrayList()
+        webSocket("/chat") {
+            connectList.add(this)
+            try {
+                while (true) {
+                    val receive = incoming.receive()
+                    when (receive) {
+                        is Frame.Text -> {
+                            val msg = receive.readText()
+                            connectList.forEach {
+                                it.outgoing.send(Frame.Text(msg))
+                            }
+                            if (msg.equals("bye", ignoreCase = true)) {
+                                connectList.remove(this)
+                                close(CloseReason(CloseReason.Codes.NORMAL, "Client Send BYE"))
+                            }
+                            println(msg)
+                        }
+                    }
                 }
-                p {
-                    fontSize = 2.em
-                }
-                rule("p.myclass") {
-                    color = Color.blue
-                }
+            } catch (e: ClosedReceiveChannelException) {
+                this.close()
+            } finally {
+                connectList.remove(this)
             }
         }
     }
