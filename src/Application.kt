@@ -17,15 +17,16 @@ import kotlinx.html.style
 import java.time.Duration
 
 
-
 fun main(args: Array<String>): Unit = io.ktor.server.netty.EngineMain.main(args)
 
-data class JsonPacket(val serverCmd: ServerCmd? = null, val chatMessage: ChatMessage? = null)
-data class ServerCmd(val cmdFun: Int? = null, val cmd: Array<String>? = null, val userList: ArrayList<String>? = null)
-data class ChatMessage(val userName: String? = null, val msg: String? = null)
+//data class JsonPacket(val serverCmd: ServerCmd? = null, val chatMessage: ChatMessage? = null)
+data class ServerCmd(val cmdCode: CmdCode, val chatMessage: ChatMessage?, val userList: ArrayList<String>?)
+data class ChatMessage(val userName: String, val msg: String)
 
 //cmdFun keyCode
-val UPDATE_ONLINE_USER_LIST: Int = 1
+enum class CmdCode {
+    CMD_UPDATE_USERS, CMD_CHAT, CND_CLOSE
+}
 
 @Suppress("unused") // Referenced in application.conf
 @kotlin.jvm.JvmOverloads
@@ -68,11 +69,11 @@ fun Application.module(testing: Boolean = false) {
             }
         }
     }
+
 }
 
 sealed class SocketReceiveException() : Exception() {
     object ClosedReceiveChannelException : SocketReceiveException()
-    object CancellationException : SocketReceiveException()
 }
 
 private suspend fun DefaultWebSocketServerSession.getReceivedText(): Either<SocketReceiveException, String> =
@@ -83,7 +84,8 @@ private suspend fun updateOnlineUserList(
     connectList: ArrayList<DefaultWebSocketServerSession>,
     onlineList: ArrayList<String>,
 ) {
-    val namelist = Gson().toJson(JsonPacket(ServerCmd(UPDATE_ONLINE_USER_LIST, null, onlineList), null))
+//    val namelist = Gson().toJson(JsonPacket(ServerCmd(CmdCode.CMD_UPDATE_USERS, onlineList), null))
+    val namelist = Gson().toJson(ServerCmd(CmdCode.CMD_UPDATE_USERS,null, onlineList))
     connectList.forEach {
         it.outgoing.send(Frame.Text(namelist))
     }
